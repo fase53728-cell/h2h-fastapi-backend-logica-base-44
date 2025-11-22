@@ -1,6 +1,5 @@
 fastapi
 uvicorn
-pandas
 supabase
-python-dotenv
-httpx
+pandas
+python-multipart

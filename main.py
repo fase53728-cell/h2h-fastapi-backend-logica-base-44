@@ -14,12 +14,11 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    raise Exception("Variáveis SUPABASE_URL e SUPABASE_KEY não foram definidas no Render.")
+    raise Exception("Variáveis SUPABASE_URL e SUPABASE_KEY não foram definidas.")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 BUCKET = "h2h-data"
-
 
 # ======================================
 # CORS
@@ -32,21 +31,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # ======================================
-# LISTAR LIGAS (CORRIGIDO)
+# LISTAR LIGAS (VERSÃO BLINDADA)
 # ======================================
 @app.get("/api/leagues")
 async def list_leagues():
     try:
-        folders = supabase.storage.from_(BUCKET).list()
+        # Lista TUDO no bucket
+        folders = supabase.storage.from_(BUCKET).list("")
 
         leagues = []
         for f in folders:
             name = f.get("name", "")
 
-            # Pasta = NOME SEM PONTO
-            # Arquivo = contem "."
+            # se NÃO tiver ponto → é pasta → é liga
             if "." not in name:
                 leagues.append(name)
 
@@ -78,11 +76,10 @@ async def list_teams(league: str):
 
 
 # ======================================
-# CARREGAR CSV DO SUPABASE
+# CARREGAR CSV DE UM TIME
 # ======================================
 def load_team_csv(league: str, team: str):
     path = f"{league}/{team}.csv"
-
     data = supabase.storage.from_(BUCKET).download(path)
 
     if not data:
@@ -93,7 +90,7 @@ def load_team_csv(league: str, team: str):
 
 
 # ======================================
-# H2H – RETORNA INFO DO TIME
+# ENDPOINT H2H
 # ======================================
 @app.get("/api/h2h/{league}/{home}/{away}")
 async def h2h(league: str, home: str, away: str):
@@ -121,9 +118,20 @@ async def h2h(league: str, home: str, away: str):
 
 
 # ======================================
+# DEBUG STORAGE (MOSTRA O QUE O SUPABASE ESTÁ DEVOLVENDO)
+# ======================================
+@app.get("/api/debug/storage")
+def debug_storage():
+    try:
+        folders = supabase.storage.from_(BUCKET).list("")
+        return folders
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ======================================
 # STATUS
 # ======================================
 @app.get("/api/status")
 def status():
     return {"status": "online", "message": "Backend Base44 conectado"}
-

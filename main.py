@@ -30,126 +30,124 @@ app.add_middleware(
 )
 
 
-# ===============================================
-# 1) CRIAR LIGA AUTOMATICAMENTE
-# ===============================================
+# ============================================================
+# 1) CRIAR LIGA AUTOMATICAMENTE (painel Base44)
+# ============================================================
 @app.post("/api/leagues/create")
-async def create_league(league_name: str = Form(...), display_name: str = Form(...)):
+async def create_league(
+    league_name: str = Form(...),
+    display_name: str = Form(...)
+):
     folder = league_name.lower().replace(" ", "-")
 
-    # 1) Criar registro na tabela 'leagues'
-    data = {
+    # Criar registro na tabela
+    resp = supabase.table("leagues").insert({
         "league_name": league_name,
         "folder_name": folder,
-        "display_name": display_name,
-    }
+        "display_name": display_name
+    }).execute()
 
-    resp = supabase.table("leagues").insert(data).execute()
-    if resp.get("status_code") == 400:
-        raise HTTPException(status_code=400, detail=resp["msg"])
+    if "error" in resp:
+        raise HTTPException(status_code=400, detail=resp["error"]["message"])
 
-    # 2) Criar pasta no Storage
+    league_id = resp.data[0]["id"]
+
+    # Criar pasta no Storage
     supabase.storage.from_(BUCKET).upload(
-        f"leagues/{folder}/.init", b"", {"content-type": "text/plain"}
+        f"leagues/{folder}/.init",
+        b"",
+        {"content-type": "text/plain"}
     )
 
     return {
-        "message": "Liga criada com sucesso",
-        "league_id": resp.data[0]["id"],
+        "message": "Liga criada com sucesso!",
+        "league_id": league_id,
         "folder": folder
     }
 
 
-# ===============================================
-# 2) UPLOAD DE CSV → CRIA TIME AUTOMATICAMENTE
-# ===============================================
+# ============================================================
+# 2) UPLOAD CSV → cria o time automaticamente
+# ============================================================
 @app.post("/api/teams/upload")
 async def upload_team_csv(
     league_folder: str = Form(...),
     league_id: str = Form(...),
     file: UploadFile = File(...)
 ):
-
-    file_content = await file.read()
-
-    # Nome do time baseado no nome do arquivo
+    file_bytes = await file.read()
     file_name = file.filename
     team_name = file_name.replace(".csv", "")
 
-    # 1) SALVAR CSV no Supabase Storage
-    storage_path = f"leagues/{league_folder}/{file_name}"
+    # Salvar arquivo no storage
+    path = f"leagues/{league_folder}/{file_name}"
 
     supabase.storage.from_(BUCKET).upload(
-        storage_path,
-        file_content,
+        path,
+        file_bytes,
         {"content-type": "text/csv"}
     )
 
-    # 2) CRIAR TIME NA TABELA
-    data = {
+    # Criar registro do time na tabela
+    supabase.table("teams").insert({
         "league_id": league_id,
         "team_name": team_name,
         "file_name": file_name
-    }
-
-    supabase.table("teams").insert(data).execute()
+    }).execute()
 
     return {
-        "message": "Time criado automaticamente",
+        "message": "Time criado com sucesso!",
         "team": team_name,
-        "file": file_name,
-        "storage_path": storage_path
+        "file": file_name
     }
 
 
-# ======================================
-# LISTAR LIGAS
-# ======================================
+# ============================================================
+# 3) LISTAR LIGAS (para o Base44 carregar)
+# ============================================================
 @app.get("/api/leagues")
 async def list_leagues():
     resp = supabase.table("leagues").select("*").execute()
     return resp.data
 
 
-# ======================================
-# LISTAR TIMES DE UMA LIGA
-# ======================================
+# ============================================================
+# 4) LISTAR TIMES DA LIGA
+# ============================================================
 @app.get("/api/teams/by-league/{league_id}")
 async def list_teams(league_id: str):
     resp = supabase.table("teams").select("*").eq("league_id", league_id).execute()
     return resp.data
 
 
-# ======================================
-# FUNÇÃO INTERNA — CARREGAR CSV
-# ======================================
-def load_team_csv(league_folder: str, file_name: str):
+# ============================================================
+# Função interna — carregar CSV do Storage
+# ============================================================
+def load_csv(league_folder: str, file_name: str):
     path = f"leagues/{league_folder}/{file_name}"
+    file_bytes = supabase.storage.from_(BUCKET).download(path)
 
-    data = supabase.storage.from_(BUCKET).download(path)
-    if not data:
+    if not file_bytes:
         raise HTTPException(status_code=404, detail="CSV não encontrado")
 
-    df = pd.read_csv(io.BytesIO(data), sep=";")
+    df = pd.read_csv(io.BytesIO(file_bytes), sep=";")
     return df
 
 
-# ======================================
-# H2H
-# ======================================
+# ============================================================
+# 5) ROTA H2H (carrega CSV individual)
+# ============================================================
 @app.get("/api/h2h/{league_id}/{home}/{away}")
 async def h2h(league_id: str, home: str, away: str):
 
-    # Buscar liga
     league = supabase.table("leagues").select("*").eq("id", league_id).single().execute()
     folder = league.data["folder_name"]
 
-    # Buscar times
-    t1 = supabase.table("teams").select("*").eq("team_name", home).single().execute()
-    t2 = supabase.table("teams").select("*").eq("team_name", away).single().execute()
+    home_data = supabase.table("teams").select("*").eq("team_name", home).single().execute()
+    away_data = supabase.table("teams").select("*").eq("team_name", away).single().execute()
 
-    df_home = load_team_csv(folder, t1.data["file_name"])
-    df_away = load_team_csv(folder, t2.data["file_name"])
+    df_home = load_csv(folder, home_data.data["file_name"])
+    df_away = load_csv(folder, away_data.data["file_name"])
 
     stats = {
         "home": {
@@ -167,9 +165,9 @@ async def h2h(league_id: str, home: str, away: str):
     return stats
 
 
-# ======================================
-# STATUS
-# ======================================
+# ============================================================
+# 6) STATUS
+# ============================================================
 @app.get("/api/status")
 def status():
-    return {"status": "online", "message": "Backend Base44 conectado com automação total"}
+    return {"status": "online", "message": "Backend conectado (automação total)"}

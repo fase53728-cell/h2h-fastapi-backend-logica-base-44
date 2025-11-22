@@ -20,6 +20,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 BUCKET = "h2h-data"
 
+
 # ======================================
 # CORS
 # ======================================
@@ -31,9 +32,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # ======================================
-# LISTAR LIGAS
-# Exemplo: ['belgium', 'laliga', 'premier-league']
+# LISTAR LIGAS (CORRIGIDO)
 # ======================================
 @app.get("/api/leagues")
 async def list_leagues():
@@ -42,9 +43,12 @@ async def list_leagues():
 
         leagues = []
         for f in folders:
-            # "size == 0" significa que é uma pasta
-            if f["metadata"]["size"] == 0:
-                leagues.append(f["name"])
+            name = f.get("name", "")
+
+            # Pasta = NOME SEM PONTO
+            # Arquivo = contem "."
+            if "." not in name:
+                leagues.append(name)
 
         return {"leagues": leagues}
 
@@ -63,8 +67,9 @@ async def list_teams(league: str):
 
         teams = []
         for f in files:
-            if f["name"].endswith(".csv"):
-                teams.append(f["name"].replace(".csv", ""))
+            name = f.get("name", "")
+            if name.endswith(".csv"):
+                teams.append(name.replace(".csv", ""))
 
         return {"league": league, "teams": teams}
 
@@ -73,7 +78,7 @@ async def list_teams(league: str):
 
 
 # ======================================
-# CARREGAR CSV
+# CARREGAR CSV DO SUPABASE
 # ======================================
 def load_team_csv(league: str, team: str):
     path = f"{league}/{team}.csv"
@@ -88,7 +93,7 @@ def load_team_csv(league: str, team: str):
 
 
 # ======================================
-# ANALISAR H2H
+# H2H – RETORNA INFO DO TIME
 # ======================================
 @app.get("/api/h2h/{league}/{home}/{away}")
 async def h2h(league: str, home: str, away: str):
@@ -96,7 +101,6 @@ async def h2h(league: str, home: str, away: str):
         df_home = load_team_csv(league, home)
         df_away = load_team_csv(league, away)
 
-        # Aqui você vai expandir depois com tudo do Base44
         stats = {
             "home": {
                 "team": home,
@@ -122,3 +126,4 @@ async def h2h(league: str, home: str, away: str):
 @app.get("/api/status")
 def status():
     return {"status": "online", "message": "Backend Base44 conectado"}
+
